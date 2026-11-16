@@ -1,0 +1,20 @@
+# Airflow so para ver a DAG orquestrando de verdade, com a mesma versao de producao.
+# O pipeline em si nao precisa dele: `make demo` roda o ciclo inteiro sem Airflow.
+x-dag-ambiente: &dag-ambiente
+  image: apache/airflow:3.2.2
+  environment:
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/safra/dags
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    SAFRA_HOME: /opt/safra
+    _PIP_ADDITIONAL_REQUIREMENTS: "-e /opt/safra"
+  volumes:
+    - ./:/opt/safra
+
+services:
+  airflow:
+    <<: *dag-ambiente
+    command: standalone
+    ports:
+      - "8080:8080"
+    mem_limit: 4g
