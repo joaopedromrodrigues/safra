@@ -1,4 +1,9 @@
-"""CLI: `python -m safra run` faz o ciclo inteiro."""
+"""CLI: `python -m safra run` faz o ciclo inteiro.
+
+As opcoes valem tanto antes quanto depois do subcomando (`safra --anos 2020 run`
+e `safra run --anos 2020`). Para isso o parser comum usa SUPPRESS: quem nao foi
+passado num nivel nao sobrescreve o valor do outro.
+"""
 
 from __future__ import annotations
 
@@ -7,35 +12,44 @@ import sys
 
 from . import config, pipeline
 
+COMANDOS = ("ingest", "build", "check", "report", "run")
+AJUDA = {
+    "ingest": "baixa bronze",
+    "build": "monta silver e gold",
+    "check": "roda as checagens de qualidade",
+    "report": "exporta dist/ e a figura",
+    "run": "ciclo completo (default)",
+}
+
+
+def construir_parser() -> argparse.ArgumentParser:
+    comum = argparse.ArgumentParser(add_help=False)
+    comum.add_argument("--anos", default=argparse.SUPPRESS,
+                       help=f"anos de colheita, ex.: {config.PRIMEIRO_ANO}-{config.ULTIMO_ANO}")
+    comum.add_argument("--municipios", default=argparse.SUPPRESS,
+                       help="numero fixo de municipios a puxar do POWER, ou 'all'")
+    comum.add_argument("--cobertura", type=float, default=argparse.SUPPRESS,
+                       help="fracao da area plantada do estado que o recorte deve cobrir "
+                            "(ignorado quando --municipios e passado)")
+    comum.add_argument("--force", action="store_true", default=argparse.SUPPRESS,
+                       help="ignora o cache e baixa de novo")
+
+    parser = argparse.ArgumentParser(prog="safra", description="soja x clima no Parana",
+                                     parents=[comum])
+    sub = parser.add_subparsers(dest="comando")
+    for comando in COMANDOS:
+        sub.add_parser(comando, help=AJUDA[comando], parents=[comum])
+    return parser
+
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="safra", description="soja x clima no Parana")
-    parser.add_argument("--anos", default=f"{config.PRIMEIRO_ANO}-{config.ULTIMO_ANO}",
-                        help="intervalo de anos de colheita, ex.: 2018-2024")
-    parser.add_argument("--municipios", default=None,
-                        help="numero fixo de municipios a puxar do POWER, ou 'all'")
-    parser.add_argument("--cobertura", type=float, default=0.85,
-                        help="fracao da area plantada do estado que o recorte deve cobrir "
-                             "(ignorado quando --municipios e passado)")
-    parser.add_argument("--force", action="store_true", help="ignora o cache e baixa de novo")
-    sub = parser.add_subparsers(dest="comando")
-
-    sub.add_parser("ingest", help="baixa bronze")
-    sub.add_parser("build", help="monta silver e gold")
-    sub.add_parser("check", help="roda as checagens de qualidade")
-    sub.add_parser("report", help="exporta dist/ e a figura")
-    sub.add_parser("run", help="ciclo completo (default)")
-
-    args = parser.parse_args(argv)
-    anos = config.anos(args.anos)
+    args = construir_parser().parse_args(argv)
+    anos = config.anos(getattr(args, "anos", None))
+    municipios = getattr(args, "municipios", None)
+    cobertura = getattr(args, "cobertura", 0.85)
+    force = getattr(args, "force", False)
     comando = args.comando or "run"
 
-    if comando == "ingest":
-        pipeline.ingerir_pam(anos, args.force)
-        pipeline.ingerir_malhas(args.force)
-        pipeline.montar_silver_parcial()
-        pipeline.ingerir_clima(args.municipios, args.cobertura, args.force)
-        return 0
     if comando == "build":
         pipeline.montar_warehouse()
         return 0
@@ -45,10 +59,13 @@ def main(argv: list[str] | None = None) -> int:
         pipeline.publicar()
         return 0
 
-    pipeline.ingerir_pam(anos, args.force)
-    pipeline.ingerir_malhas(args.force)
+    pipeline.ingerir_pam(anos, force)
+    pipeline.ingerir_malhas(force)
     pipeline.montar_silver_parcial()
-    pipeline.ingerir_clima(args.municipios, args.cobertura, args.force)
+    pipeline.ingerir_clima(municipios, cobertura, force)
+    if comando == "ingest":
+        return 0
+
     pipeline.montar_warehouse()
     ok = pipeline.validar()
     pipeline.publicar()
