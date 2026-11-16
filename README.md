@@ -63,12 +63,15 @@ src/safra/quality/    six checks, each returning the measured value and the thre
 src/safra/report.py   terminal table, CSVs into dist/, the figure above
 src/safra/pipeline.py one function per stage
 dags/safra_dag.py     Airflow DAG that only wires those functions
-tests/                16 tests, all offline, against trimmed real API payloads
+tests/                19 tests, all offline, against trimmed real API payloads
 ```
 
 `docs/arquitetura.md` for the layer contract and the S3/Athena mapping,
 `docs/decisoes.md` for the seven decisions that shaped it (in Portuguese),
 `docs/dados.md` for the data dictionary and the known limits.
+
+Tests run without network (`pytest -q`). The DAG test is skipped unless Airflow is installed;
+`make dag-test` runs it against `apache-airflow==3.2.2` in a separate venv.
 
 ## Checks
 
