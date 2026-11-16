@@ -50,6 +50,21 @@ def modelo(municipios: pd.DataFrame) -> dict:
     dados = municipios.dropna(
         subset=["chuva_anomalia_pct", "rendimento_anomalia_pct", "veranico_critica_dias"]
     ).copy()
+    vazio = {"n_observacoes": int(len(dados)),
+             "n_municipios": int(dados["codigo_municipio"].nunique()) if len(dados) else 0,
+             "r_chuva": None, "r_veranico": None, "r2": None,
+             "efeito_10pp_chuva": None, "efeito_dia_veranico": None,
+             "safras_minimas": 0}
+
+    if dados.empty:
+        return vazio
+    # Sem variacao dentro do municipio nao existe desvio para correlacionar: com uma
+    # safra so, todo desvio e zero (e a correlacao vira nan).
+    por_municipio = dados.groupby("codigo_municipio").size()
+    vazio["safras_minimas"] = int(por_municipio.min())
+    if por_municipio.min() < 3:
+        return vazio
+
     dados["veranico_anomalia"] = dados.groupby("codigo_municipio")[
         "veranico_critica_dias"
     ].transform(lambda s: s - s.mean())
@@ -87,6 +102,11 @@ def imprimir(estado: pd.DataFrame, ajuste: dict) -> None:
               f"{linha.veranico_critica_ponderado_dias:>10.1f}d"
               f"{linha.pct_municipios_secos:>7.0%}")
     print()
+    if ajuste["r2"] is None:
+        print(f"model: not fitted -- {ajuste['n_municipios']} municipalities, "
+              f"{ajuste['safras_minimas']} season(s) each. The regression needs at least 3 "
+              "seasons per municipality; run --anos 2016-2024.")
+        return
     print(f"model: deviations inside each municipality, {ajuste['n_observacoes']} obs / "
           f"{ajuste['n_municipios']} municipalities")
     print(f"  corr rain (Dec-Jan)     = {ajuste['r_chuva']:+.2f}"
@@ -124,7 +144,10 @@ def figura(estado: pd.DataFrame, municipios: pd.DataFrame, ajuste: dict, destino
                             dados["veranico_critica_dias"].max(), 20)
         dir_.plot(grade, np.polyval(coef, grade), color="#444", linewidth=1.2)
     dir_.axhline(0, color="#999", linewidth=0.8)
-    dir_.set_title(f"Dry spell in Dec-Jan vs yield deviation (r={ajuste['r_veranico']:+.2f})")
+    titulo = "Dry spell in Dec-Jan vs yield deviation"
+    if ajuste["r_veranico"] is not None:
+        titulo += f" (r={ajuste['r_veranico']:+.2f})"
+    dir_.set_title(titulo)
     dir_.set_xlabel("longest run of days with less than 1 mm of rain")
     dir_.set_ylabel("yield deviation from the municipality mean (%)")
     dir_.grid(alpha=0.25)
